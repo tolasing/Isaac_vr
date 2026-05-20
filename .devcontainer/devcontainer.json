@@ -11,14 +11,18 @@
             "DOCKER_USER_HOME_ARG": "/root"
         }
     },
-    "workspaceFolder": "/workspace/isaaclab",
-
     // Environment variables set inside the container
     "remoteEnv": {
         "NV_CXR_ENABLE_PUSH_DEVICES": "0",
         "OMNI_KIT_ALLOW_ROOT": "1",
-        "ISAACSIM_PATH": "/workspace/isaaclab/_isaac_sim"
+        "ISAACSIM_PATH": "/workspace/isaaclab/_isaac_sim",
     },
+
+    // Persist VS Code Server so it doesn't re-download on every container reopen
+    "mounts": [
+        "source=isaaclab-xr-vscode-server,target=/vscode,type=volume",
+        "source=/root/.claude,target=/root/.claude,type=bind,consistency=cached"
+    ],
 
     // NVIDIA GPU access
     "runArgs": [

@@ -72,6 +72,20 @@ RUN ln -sf ${ISAACSIM_ROOT_PATH} ${ISAACLAB_PATH}/_isaac_sim
 # Install toml dependency
 RUN ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install toml
 
+# Install Vulkan and BSD runtime libs required by CloudXR
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libvulkan1 \
+    libbsd0 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Install Isaac Teleop with CloudXR and dexterous hand retargeting support.
+# Pin daqp>=0.8.0 to fix Pink IK solver crash (qpsolvers 4.12+ passes primal_start=
+# to daqp.solve, which only daqp>=0.8.0 supports).
+RUN ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install \
+    'isaacteleop[retargeters,ui,cloudxr]~=1.0.0' \
+    --extra-index-url https://pypi.nvidia.com && \
+    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install 'daqp>=0.8.0'
+
 # Install apt dependencies for extensions that declare them in their extension.toml,
 RUN ${ISAACLAB_PATH}/isaaclab.sh -p ${ISAACLAB_PATH}/tools/install_deps.py apt ${ISAACLAB_PATH}/source && \
     apt-get -y autoremove && apt-get clean && \
