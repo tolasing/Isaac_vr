@@ -3,15 +3,19 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from isaaclab.assets import RigidObjectCfg
+import os
+
+import isaaclab.sim as sim_utils
+from isaaclab.assets import ArticulationCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import FrameTransformerCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
-from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.utils import configclass
-from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
+
+_ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "assets")
+_CARDBOARD_BOX_USD = os.path.join(_ASSETS_DIR, "cardboard_box.usd")
 
 from isaaclab_tasks.manager_based.manipulation.stack import mdp
 from isaaclab_tasks.manager_based.manipulation.stack.mdp import franka_stack_events
@@ -51,9 +55,18 @@ class EventCfg:
         func=franka_stack_events.randomize_object_pose,
         mode="reset",
         params={
-            "pose_range": {"x": (0.4, 0.6), "y": (-0.10, 0.10), "z": (0.0203, 0.0203), "yaw": (-1.0, 1, 0)},
-            "min_separation": 0.1,
-            "asset_cfgs": [SceneEntityCfg("cube_1"), SceneEntityCfg("cube_2"), SceneEntityCfg("cube_3")],
+            "pose_range": {"x": (0.35, 0.65), "y": (-0.20, 0.20), "z": (0.075, 0.075), "yaw": (-1.0, 1, 0)},
+            "min_separation": 0.35,
+            "asset_cfgs": [SceneEntityCfg("cube_1")],
+        },
+    )
+
+    init_flap_open = EventTerm(
+        func=franka_stack_events.set_flap_open,
+        mode="reset",
+        params={
+            "open_angle": 2.094,
+            "asset_cfg": SceneEntityCfg("cube_1"),
         },
     )
 
@@ -94,47 +107,26 @@ class FrankaCubeStackEnvCfg(StackEnvCfg):
         self.gripper_open_val = 0.04
         self.gripper_threshold = 0.005
 
-        # Rigid body properties of each cube
-        cube_properties = RigidBodyPropertiesCfg(
-            solver_position_iteration_count=16,
-            solver_velocity_iteration_count=1,
-            max_angular_velocity=1000.0,
-            max_linear_velocity=1000.0,
-            max_depenetration_velocity=5.0,
-            disable_gravity=False,
+        # Single cardboard box (30×20×15 cm, with hinged top flap)
+        self.scene.cube_1 = ArticulationCfg(
+            prim_path="{ENV_REGEX_NS}/Cube_1",
+            init_state=ArticulationCfg.InitialStateCfg(pos=[0.50, 0.0, 0.075], joint_pos={"FlapJoint": 2.094}),
+            spawn=UsdFileCfg(usd_path=_CARDBOARD_BOX_USD),
+            actuators={},
         )
 
-        # Set each stacking cube deterministically
-        self.scene.cube_1 = RigidObjectCfg(
-            prim_path="{ENV_REGEX_NS}/Cube_1",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.4, 0.0, 0.0203], rot=[0, 0, 0, 1]),
-            spawn=UsdFileCfg(
-                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd",
-                scale=(1.0, 1.0, 1.0),
-                rigid_props=cube_properties,
-                semantic_tags=[("class", "cube_1")],
-            ),
-        )
-        self.scene.cube_2 = RigidObjectCfg(
-            prim_path="{ENV_REGEX_NS}/Cube_2",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.55, 0.05, 0.0203], rot=[0, 0, 0, 1]),
-            spawn=UsdFileCfg(
-                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd",
-                scale=(1.0, 1.0, 1.0),
-                rigid_props=cube_properties,
-                semantic_tags=[("class", "cube_2")],
-            ),
-        )
-        self.scene.cube_3 = RigidObjectCfg(
-            prim_path="{ENV_REGEX_NS}/Cube_3",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.60, -0.1, 0.0203], rot=[0, 0, 0, 1]),
-            spawn=UsdFileCfg(
-                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/green_block.usd",
-                scale=(1.0, 1.0, 1.0),
-                rigid_props=cube_properties,
-                semantic_tags=[("class", "cube_3")],
-            ),
-        )
+        # Remove unused cube_2 and cube_3 from observations and terminations
+        self.scene.cube_2 = None
+        self.scene.cube_3 = None
+        self.terminations.cube_2_dropping = None
+        self.terminations.cube_3_dropping = None
+        self.terminations.success = None
+        self.observations.policy.object = None
+        self.observations.policy.cube_positions = None
+        self.observations.policy.cube_orientations = None
+        self.observations.subtask_terms.grasp_1 = None
+        self.observations.subtask_terms.stack_1 = None
+        self.observations.subtask_terms.grasp_2 = None
 
         # Listens to the required transforms
         marker_cfg = FRAME_MARKER_CFG.copy()

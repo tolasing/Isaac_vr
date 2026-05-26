@@ -212,6 +212,20 @@ def randomize_object_pose(
             )
 
 
+def set_flap_open(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor,
+    open_angle: float = 2.094,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+):
+    """Write the cardboard box flap joint to the fully-open position on every reset."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    joint_pos = torch.full((len(env_ids), asset.num_joints), open_angle, device=env.device)
+    joint_vel = torch.zeros_like(joint_pos)
+    asset.write_joint_position_to_sim_index(position=joint_pos, env_ids=env_ids)
+    asset.write_joint_velocity_to_sim_index(velocity=joint_vel, env_ids=env_ids)
+
+
 def randomize_rigid_objects_in_focus(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor,
