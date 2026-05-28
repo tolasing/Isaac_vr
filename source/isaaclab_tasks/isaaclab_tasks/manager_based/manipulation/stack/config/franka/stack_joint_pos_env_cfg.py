@@ -3,7 +3,8 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from isaaclab.assets import RigidObjectCfg
+import isaaclab.sim as sim_utils
+from isaaclab.assets import DeformableObjectCfg, RigidObjectCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.sensors import FrameTransformerCfg
@@ -132,6 +133,23 @@ class FrankaCubeStackEnvCfg(StackEnvCfg):
                 scale=(1.0, 1.0, 1.0),
                 rigid_props=cube_properties,
                 semantic_tags=[("class", "cube_3")],
+            ),
+        )
+
+        # Deformable cube — soft body that can be squeezed/deformed by the gripper
+        self.scene.deformable_cube = DeformableObjectCfg(
+            prim_path="{ENV_REGEX_NS}/DeformableCube",
+            init_state=DeformableObjectCfg.InitialStateCfg(pos=(0.45, -0.15, 0.02)),
+            spawn=sim_utils.MeshCuboidCfg(
+                size=(0.04, 0.04, 0.04),
+                deformable_props=sim_utils.DeformableBodyPropertiesCfg(rest_offset=0.0),
+                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.6, 0.1)),
+                physics_material=sim_utils.DeformableBodyMaterialCfg(
+                    youngs_modulus=1e4,
+                    poissons_ratio=0.495,
+                    density=100.0,
+                    elasticity_damping=0.1,
+                ),
             ),
         )
 

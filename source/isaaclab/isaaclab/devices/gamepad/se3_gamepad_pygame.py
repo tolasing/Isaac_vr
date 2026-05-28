@@ -19,8 +19,6 @@ import numpy as np
 import torch
 from scipy.spatial.transform import Rotation
 
-import pygame
-
 from ..device_base import DeviceBase, DeviceCfg
 
 
@@ -66,6 +64,9 @@ class Se3GamepadPygame(DeviceBase):
     def __init__(self, cfg: Se3GamepadPygameCfg):
         super().__init__()
 
+        import pygame
+        self._pygame = pygame
+
         # Use dummy SDL drivers so pygame doesn't fight the Omniverse window/audio
         import os
         os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
@@ -77,11 +78,11 @@ class Se3GamepadPygame(DeviceBase):
         self.gripper_term = cfg.gripper_term
         self._sim_device = cfg.sim_device
 
-        pygame.init()
-        pygame.joystick.init()
-        if pygame.joystick.get_count() == 0:
+        self._pygame.init()
+        self._pygame.joystick.init()
+        if self._pygame.joystick.get_count() == 0:
             raise RuntimeError("No gamepad detected. Connect a gamepad and try again.")
-        self._joystick = pygame.joystick.Joystick(0)
+        self._joystick = self._pygame.joystick.Joystick(0)
         self._joystick.init()
 
         self._close_gripper = False
@@ -91,9 +92,11 @@ class Se3GamepadPygame(DeviceBase):
         self._additional_callbacks: dict = {}
 
     def __del__(self):
-        if pygame.joystick.get_init():
+        if not hasattr(self, "_pygame"):
+            return
+        if self._pygame.joystick.get_init():
             self._joystick.quit()
-            pygame.joystick.quit()
+            self._pygame.joystick.quit()
 
     def __str__(self) -> str:
         name = self._joystick.get_name() if self._joystick else "unknown"
@@ -122,7 +125,7 @@ class Se3GamepadPygame(DeviceBase):
 
     def advance(self) -> torch.Tensor:
         # drain pygame event queue so joystick state is current
-        pygame.event.pump()
+        self._pygame.event.pump()
 
         self._delta_pose_raw.fill(0.0)
         self._read_sticks()
