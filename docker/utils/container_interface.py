@@ -193,7 +193,7 @@ class ContainerInterface:
             + self.add_yamls
             + self.add_profiles
             + self.add_env_files
-            + ["up", "--detach", "--build", "--remove-orphans"]
+            + ["up", "--detach", "--build"]
         )
         subprocess.run(cmd, check=False, cwd=self.context_dir, env=self.environ)
 
