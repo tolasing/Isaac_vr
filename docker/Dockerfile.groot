@@ -1,36 +1,74 @@
-# Standalone GR00T N1.5 inference container.
-# Mirrors the official NVIDIA/Isaac-GR00T Dockerfile but clones instead of COPYing sources.
+# Standalone GR00T N1.7 training container.
+# Clones Isaac-GR00T and installs all dependencies inside the image.
+# No devcontainer or bind-mount required.
+#
+# Build:
+#   docker build -f docker/Dockerfile.groot -t groot-training .
+#
+# Run:
+#   docker run -it --rm --gpus all \
+#     -v $(pwd)/lerobot_dataset:/workspace/lerobot_dataset \
+#     -v $(pwd)/checkpoints:/workspace/checkpoints \
+#     groot-training
 
-FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel
+FROM pytorch/pytorch:2.7.0-cuda12.6-cudnn9-devel
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONPATH=/groot_ws/groot
 
 # System dependencies
 RUN apt-get update && \
-    apt-get install -y tzdata && \
-    ln -fs /usr/share/zoneinfo/America/Los_Angeles /etc/localtime && \
-    apt-get install -y \
-    netcat dnsutils libgl1-mesa-glx git libvulkan-dev \
-    zip unzip wget curl git-lfs build-essential cmake \
-    vim less sudo htop ca-certificates man tmux ffmpeg tensorrt \
-    libglib2.0-0 libsm6 libxext6 libxrender-dev && \
+    apt-get install -y --no-install-recommends \
+    tzdata \
+    git git-lfs \
+    curl wget \
+    zip unzip \
+    build-essential cmake \
+    ffmpeg \
+    libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev \
+    vim tmux htop \
+    ca-certificates && \
+    ln -fs /usr/share/zoneinfo/Asia/Kolkata /etc/localtime && \
     rm -rf /var/lib/apt/lists/*
 
+# Clone Isaac-GR00T pinned to N1.7
+RUN git clone --branch n1.7-release --depth 1 \
+    https://github.com/NVIDIA/Isaac-GR00T.git /workspace/Isaac-GR00T
+
+WORKDIR /workspace/Isaac-GR00T
+
+# Base pip upgrade
 RUN pip install --upgrade pip setuptools
-RUN pip install gpustat wandb==0.19.0
 
 # Remove transformer-engine to avoid conflict, then install flash-attn
-RUN pip uninstall -y transformer-engine
+RUN pip uninstall -y transformer-engine || true
 RUN pip install flash_attn==2.7.1.post4 --no-build-isolation --force-reinstall
+
+# Pin torch — must come after flash-attn build
+RUN pip install --force-reinstall \
+    torch==2.7.0 \
+    torchvision==0.22.0 \
+    torchaudio==2.7.0 \
+    numpy==1.26.4
 
 # Pin opencv
 RUN pip uninstall -y opencv-python opencv-python-headless || true && \
-    rm -rf /usr/local/lib/python3.10/dist-packages/cv2 || true && \
     pip install opencv-python==4.8.0.74
 
-# Pin torch — must come after flash-attn build
-RUN pip install --force-reinstall torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 numpy==1.26.4
+# Install Isaac-GR00T and its dependencies
+RUN pip install -e ".[base]"
 
-# Source-dependent installs (pip install -e) are handled by postCreateCommand
-# after the /groot_ws bind-mount is in place.
+# Install extra tools
+RUN pip install \
+    gpustat \
+    wandb==0.19.0 \
+    huggingface_hub
+
+# Set up workspace dirs
+RUN mkdir -p /workspace/lerobot_dataset \
+             /workspace/checkpoints
+
+ENV PYTHONPATH=/workspace/Isaac-GR00T
+
+WORKDIR /workspace
+
+CMD ["/bin/bash"]
