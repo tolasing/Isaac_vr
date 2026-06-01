@@ -73,3 +73,11 @@ tests/
 # TacSL sensor
 **/tactile_record/*
 **/gelsight_r15_data/*
+
+# GR00T data pipeline — large files, not tracked in git
+demos/
+lerobot_dataset/
+hand_landmarker.task
+*.mp4
+*.json
+!src/.gitignore

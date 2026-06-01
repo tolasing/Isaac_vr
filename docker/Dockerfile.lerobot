@@ -1,0 +1,40 @@
+# Dockerfile for LeRobot dataset conversion
+# Converts groot demo recordings into LeRobot format for GR00T finetuning
+#
+# Build:
+#   docker build -f docker/Dockerfile.lerobot -t groot-lerobot .
+#
+# Run:
+#   docker run -it --rm \
+#     -v $(pwd)/demos:/workspace/demos \
+#     -v $(pwd)/lerobot_dataset:/workspace/lerobot_dataset \
+#     -v $(pwd):/workspace/groot \
+#     groot-lerobot
+
+FROM python:3.10-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    ffmpeg \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgl1 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+    lerobot \
+    opencv-python-headless \
+    numpy \
+    pandas \
+    pyarrow \
+    tqdm
+
+WORKDIR /workspace
+
+CMD ["/bin/bash"]
