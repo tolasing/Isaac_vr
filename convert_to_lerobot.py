@@ -76,17 +76,28 @@ for ep_idx, video_path in enumerate(tqdm(video_files, desc='Converting')):
         with open(lm_path) as f:
             landmarks = json.load(f)
 
-    # Extract state per frame — prefer right hand, fall back to left
+    # Extract state per frame
+    # New format (Option 1): wrist_robot in robot world frame + calibrated gripper
+    # Old format (legacy):   hands.right.wrist_world + gripper_open (MediaPipe frame)
     states = []
     for lm in landmarks:
-        if 'lost' in lm or 'hands' not in lm:
+        if 'lost' in lm:
             states.append(None)
             continue
-        hand = lm['hands'].get('right') or lm['hands'].get('left')
-        if hand:
-            w = hand['wrist_world']
-            g = hand['gripper_open']
+        # New calibrated format
+        if 'wrist_robot' in lm:
+            w = lm['wrist_robot']     # [x,y,z] in robot world frame (metres)
+            g = lm['gripper']         # Franka range [0, 0.04]
             states.append([w[0], w[1], w[2], g])
+        # Legacy MediaPipe format
+        elif 'hands' in lm:
+            hand = lm['hands'].get('right') or lm['hands'].get('left')
+            if hand:
+                w = hand['wrist_world']
+                g = hand['gripper_open']
+                states.append([w[0], w[1], w[2], g])
+            else:
+                states.append(None)
         else:
             states.append(None)
 
@@ -151,6 +162,31 @@ with open(OUTPUT_DIR / 'meta' / 'episodes.jsonl', 'w') as f:
 # ── meta/tasks.jsonl ─────────────────────────────────────────────────────────
 with open(OUTPUT_DIR / 'meta' / 'tasks.jsonl', 'w') as f:
     f.write(json.dumps({'task_index': 0, 'task': TASK}) + '\n')
+
+# ── meta/modality.json ────────────────────────────────────────────────────────
+# Maps dataset column slices to GR00T modality keys.
+# State/action layout: [single_arm(0:3), gripper(3:4)]
+# Camera key derived from --camera-key arg (default: observation.images.top → "top")
+camera_modality_key = CAMERA_KEY.split('.')[-1]  # "observation.images.top" → "top"
+modality = {
+    "state": {
+        "single_arm": {"start": 0, "end": 3},   # [x, y, z] robot world frame
+        "gripper":    {"start": 3, "end": 4},   # [0, 0.04] Franka gripper
+    },
+    "action": {
+        "single_arm": {"start": 0, "end": 3},   # [dx, dy, dz] relative EEF delta
+        "gripper":    {"start": 3, "end": 4},   # gripper delta
+    },
+    "video": {
+        camera_modality_key: {"original_key": CAMERA_KEY},
+    },
+    "annotation": {
+        "human.task_description": {"original_key": "task_index"},
+    },
+}
+with open(OUTPUT_DIR / 'meta' / 'modality.json', 'w') as f:
+    json.dump(modality, f, indent=4)
+print(f"Wrote meta/modality.json (camera key: '{camera_modality_key}')")
 
 # ── meta/stats.json ───────────────────────────────────────────────────────────
 # Compute normalization stats from all episodes
