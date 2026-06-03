@@ -398,6 +398,25 @@ def main():
                 action_dict = result[0] if isinstance(result, list) else result
                 arm_act  = np.array(action_dict["single_arm"], dtype=np.float32)[0]  # (H,3)
                 grip_act = np.array(action_dict["gripper"],    dtype=np.float32)[0]  # (H,1)
+
+                # ── COORD-BUG DIAGNOSTIC ──────────────────────────────────────
+                # Check if model action points toward or away from cube.
+                # cos_sim ≈ -1 means opposite direction → calibration M.T bug confirmed.
+                to_cube = CUBE_POS - eef_pos
+                a0 = arm_act[0]
+                if np.linalg.norm(a0) > 1e-6 and np.linalg.norm(to_cube) > 1e-6:
+                    cos_sim = float(np.dot(to_cube, a0) /
+                                    (np.linalg.norm(to_cube) * np.linalg.norm(a0)))
+                    print(f"  [diag] eef={np.round(eef_pos,3)}  "
+                          f"action={np.round(a0,4)}  cos_sim_to_cube={cos_sim:.3f}", flush=True)
+
+                # ── WORKAROUND: undo M.T vs M calibration bug ────────────────
+                # M_buggy = M_true.T, so d_true = R^2 @ d_buggy = [-dy, -dz, dx]
+                # x was already correct sign; y and z needed negation + axis swap.
+                arm_act = np.stack(
+                    [-arm_act[:, 1], -arm_act[:, 2], arm_act[:, 0]], axis=-1
+                )
+
                 # Build 7D action: [dx,dy,dz,0,0,0, gripper_binary]
                 rot_zeros = np.zeros_like(arm_act)                                    # (H,3)
                 grip_binary = np.where(grip_act > 0, 1.0, -1.0)                      # (H,1)
