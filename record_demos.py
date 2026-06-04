@@ -105,8 +105,8 @@ def compute_transform(mp_pts: np.ndarray, world_pts: np.ndarray):
     A = (mp_pts[1:] - mp_o).T     # (3, 2) — two difference vectors in MP frame
     B = (world_pts[1:] - world_o).T  # (3, 2) — same in world frame
 
-    # Least-squares: find M (3x3) such that M @ A = B (i.e. M @ mp_diff = world_diff).
-    # lstsq(A.T, B.T) solves A.T @ X = B.T giving X = M.T — transpose the result.
+    # Least-squares: find M (3x3) such that M @ A ≈ B (i.e. M @ mp_diff = world_diff).
+    # lstsq(A.T, B.T) solves A.T @ X = B.T giving X = M.T — transpose to get correct M.
     M_T, _, _, _ = np.linalg.lstsq(A.T, B.T, rcond=None)
     M = M_T.T
     t = world_o - M @ mp_o
