@@ -35,6 +35,7 @@ from isaaclab.sim.spawners.from_files import GroundPlaneCfg, spawn_ground_plane
 from isaaclab.utils import configclass
 
 from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG
+from isaaclab_assets.robots.openarm import OPENARM_UNI_HIGH_PD_CFG
 
 
 # ── Dimensions ────────────────────────────────────────────────────────────────
@@ -74,6 +75,11 @@ def _static_box(size, pos, material):
             visual_material=material,
         ),
     )
+
+
+_openarm_cfg = OPENARM_UNI_HIGH_PD_CFG.copy()
+_openarm_cfg.actuators["openarm_arm"].stiffness = 400.0
+_openarm_cfg.actuators["openarm_arm"].damping = 80.0
 
 
 @configclass
@@ -151,20 +157,20 @@ class TestSceneCfg(InteractiveSceneCfg):
         ),
     )
 
-    # ── Franka Panda — base on table surface ───────────────────────────────────
-    robot: ArticulationCfg = FRANKA_PANDA_HIGH_PD_CFG.replace(
+    # ── OpenArm Unimanual — base on table surface ─────────────────────────────
+    robot: ArticulationCfg = _openarm_cfg.replace(
         prim_path="{ENV_REGEX_NS}/Robot",
         init_state=ArticulationCfg.InitialStateCfg(
             pos=(ROBOT_X, ROBOT_Y, SURFACE_Z),
             joint_pos={
-                "panda_joint1": 0.0,
-                "panda_joint2": -0.569,
-                "panda_joint3": 0.0,
-                "panda_joint4": -2.810,
-                "panda_joint5": 0.0,
-                "panda_joint6":  3.037,
-                "panda_joint7":  0.785,
-                "panda_finger_joint.*": 0.04,
+                "openarm_joint1": 0.0,     # point toward +X (cube at x=0.45)
+                "openarm_joint2": -0.30,
+                "openarm_joint3": 0.0,     # was -1.57 which folded arm backward
+                "openarm_joint4": 1.2217,  # 70 degrees
+                "openarm_joint5": 0.0,
+                "openarm_joint6": 0.0,
+                "openarm_joint7": 0.0,
+                "openarm_finger_joint.*": 0.044,
             },
         ),
     )
@@ -255,8 +261,8 @@ class TestSceneCfg(InteractiveSceneCfg):
             clipping_range=(0.1, 1.0e5),
         ),
         offset=CameraCfg.OffsetCfg(
-            pos=(0.5, -0.9, SURFACE_Z + 1.0),
-            rot=(0.7071, -0.4082, 0.4082, 0.4082),
+            pos=(0.5, 0.0, 2.0),
+            rot=(0.7933, 0.0, 0.6088, 0.0),  # world convention: look down, Y=-15°, Z=-90°  # world convention: look down -Z, image up = world +Y
             convention="world",
         ),
     )
@@ -279,7 +285,7 @@ def main():
     camera: Camera      = scene["camera"]
 
     home = torch.tensor(
-        [[0.0, -0.569, 0.0, -2.810, 0.0, 3.037, 0.785, 0.04, 0.04]],
+        [[0.0, -0.30, 0.0, 1.2217, 0.0, 0.0, 0.0, 0.044, 0.044, 0.044, 0.044]],
         device=sim.device,
     )
 
@@ -293,7 +299,7 @@ def main():
             camera.update(sim_cfg.dt)
             rgb = camera.data.output["rgb"]
             cube_pos = cube.data.root_pos_w[0].cpu().numpy()
-            eef_ids, _ = robot.find_bodies("panda_hand")
+            eef_ids, _ = robot.find_bodies("openarm_hand")
             eef_pos = robot.data.body_pos_w[0, eef_ids[0]].cpu().numpy()
 
             print(f"[test_scene] Step {step}")

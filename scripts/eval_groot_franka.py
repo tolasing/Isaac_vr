@@ -32,7 +32,7 @@ parser.add_argument("--num_episodes", type=int, default=50)
 parser.add_argument("--max_steps",    type=int, default=300)
 parser.add_argument("--server_host",  type=str, default="localhost")
 parser.add_argument("--server_port",  type=int, default=5555)
-parser.add_argument("--n_action_steps", type=int, default=8)
+parser.add_argument("--n_action_steps", type=int, default=2)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -59,15 +59,19 @@ from isaaclab.sensors import CameraCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-from isaaclab_assets.robots.franka import FRANKA_PANDA_HIGH_PD_CFG
+from isaaclab_assets.robots.openarm import OPENARM_UNI_HIGH_PD_CFG
 import isaaclab_tasks.manager_based.manipulation.lift  # noqa: registers envs
 
 from isaaclab.markers.config import FRAME_MARKER_CFG
 from isaaclab.sensors import FrameTransformerCfg
 from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
 
-from isaaclab_tasks.manager_based.manipulation.lift.config.franka.ik_rel_env_cfg import FrankaCubeLiftEnvCfg
+from isaaclab_tasks.manager_based.manipulation.lift.config.openarm.joint_pos_env_cfg import OpenArmCubeLiftEnvCfg
 from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg import ObjectTableSceneCfg
+
+_openarm_cfg = OPENARM_UNI_HIGH_PD_CFG.copy()
+_openarm_cfg.actuators["openarm_arm"].stiffness = 400.0
+_openarm_cfg.actuators["openarm_arm"].damping = 80.0
 
 
 # ── GR00T policy client ───────────────────────────────────────────────────────
@@ -150,14 +154,13 @@ class PickPlaceSceneCfg(ObjectTableSceneCfg):
 
     # ── EEF frame transformer (required by LiftEnvCfg) ────────────────────────
     ee_frame: FrameTransformerCfg = FrameTransformerCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/panda_link0",
+        prim_path="{ENV_REGEX_NS}/Robot/openarm_link0",
         debug_vis=False,
         visualizer_cfg=FRAME_MARKER_CFG.replace(prim_path="/Visuals/FrameTransformer"),
         target_frames=[
             FrameTransformerCfg.FrameCfg(
-                prim_path="{ENV_REGEX_NS}/Robot/panda_hand",
+                prim_path="{ENV_REGEX_NS}/Robot/openarm_ee_tcp",
                 name="end_effector",
-                offset=OffsetCfg(pos=[0.0, 0.0, 0.1034]),
             ),
         ],
     )
@@ -263,8 +266,8 @@ class PickPlaceSceneCfg(ObjectTableSceneCfg):
             clipping_range=(0.1, 1.0e5),
         ),
         offset=CameraCfg.OffsetCfg(
-            pos=(0.5, -0.9, SURFACE_Z + 1.0),
-            rot=(0.7071, -0.4082, 0.4082, 0.4082),
+            pos=(0.2, 0.0, 2.0),
+            rot=(0.7933, 0.0, 0.6088, 0.0),  # world convention: look down, Y=-15°, Z=-90°
             convention="world",
         ),
     )
@@ -273,7 +276,7 @@ class PickPlaceSceneCfg(ObjectTableSceneCfg):
 # ── Custom env config ─────────────────────────────────────────────────────────
 
 @configclass
-class PickPlaceEnvCfg(FrankaCubeLiftEnvCfg):
+class PickPlaceEnvCfg(OpenArmCubeLiftEnvCfg):
     def __post_init__(self):
         super().__post_init__()
 
@@ -293,40 +296,39 @@ class PickPlaceEnvCfg(FrankaCubeLiftEnvCfg):
             init_state=RigidObjectCfg.InitialStateCfg(pos=CUBE_POS.tolist()),
         )
 
-        # Place robot on table surface
-        self.scene.robot = FRANKA_PANDA_HIGH_PD_CFG.replace(
+        # Place OpenArm on table surface with stiff PD
+        self.scene.robot = _openarm_cfg.replace(
             prim_path="{ENV_REGEX_NS}/Robot",
             init_state=ArticulationCfg.InitialStateCfg(
                 pos=(0.0, 0.0, SURFACE_Z),
                 joint_pos={
-                    "panda_joint1": 0.0,
-                    "panda_joint2": -0.569,
-                    "panda_joint3": 0.0,
-                    "panda_joint4": -2.810,
-                    "panda_joint5": 0.0,
-                    "panda_joint6":  3.037,
-                    "panda_joint7":  0.785,
-                    "panda_finger_joint.*": 0.04,
+                    "openarm_joint1":  0.0,    # point toward +X (cube is at x=0.45)
+                    "openarm_joint2": -0.30,
+                    "openarm_joint3":  0.0,    # was -1.57 which folded arm backward
+                    "openarm_joint4":  1.2217,
+                    "openarm_joint5":  0.0,
+                    "openarm_joint6":  0.0,
+                    "openarm_joint7":  0.0,
+                    "openarm_finger_joint.*": 0.044,
                 },
             ),
         )
 
-        # IK-Rel action: 6D pose delta (we'll zero the rotation component)
+        # IK-Rel action: 6D pose delta
         self.actions.arm_action = DifferentialInverseKinematicsActionCfg(
             asset_name="robot",
-            joint_names=["panda_joint.*"],
-            body_name="panda_hand",
+            joint_names=["openarm_joint[1-7]"],
+            body_name="openarm_hand",
             controller=DifferentialIKControllerCfg(
                 command_type="pose", use_relative_mode=True, ik_method="dls"
             ),
-            scale=0.5,
-            body_offset=DifferentialInverseKinematicsActionCfg.OffsetCfg(pos=[0.0, 0.0, 0.107]),
+            scale=1.0,
         )
         self.actions.gripper_action = BinaryJointPositionActionCfg(
             asset_name="robot",
-            joint_names=["panda_finger.*"],
-            open_command_expr={"panda_finger_.*": 0.04},
-            close_command_expr={"panda_finger_.*": 0.0},
+            joint_names=["openarm_finger_joint.*"],
+            open_command_expr={"openarm_finger_joint.*": 0.044},
+            close_command_expr={"openarm_finger_joint.*": 0.0},
         )
 
         # Reduce episode length for eval
@@ -363,6 +365,7 @@ def main():
     #   gripper: 1D binary [-1=close, +1=open]
     # Total: 7D
     device = env.device
+    gripper_ids, _ = env.scene["robot"].find_joints("openarm_finger_joint1")
     successes = 0
 
     for ep in range(args_cli.num_episodes):
@@ -376,16 +379,17 @@ def main():
 
             # EEF state from frame transformer
             eef_pos = env.scene["ee_frame"].data.target_pos_w[0, 0].cpu().numpy()  # (3,)
-            gripper_pos = env.scene["robot"].data.joint_pos[0, -2].item()           # finger_joint1
+            gripper_pos = env.scene["robot"].data.joint_pos[0, gripper_ids[0]].item()
 
             gripper_state = np.array([[gripper_pos]], dtype=np.float32)
 
             # ── Query GR00T ───────────────────────────────────────────────────
             if len(action_queue) == 0:
+                # v5 was trained with world-frame EEF state (mean≈[0.44,-0.07,0.84])
                 obs_dict = {
                     "video": {"top": rgb[np.newaxis, np.newaxis]},            # (1,T=1,H,W,3)
                     "state": {
-                        "single_arm": eef_pos[np.newaxis, np.newaxis],        # (1,T=1,3)
+                        "single_arm": eef_pos[np.newaxis, np.newaxis],        # (1,T=1,3) world frame
                         "gripper":    gripper_state[:, np.newaxis],            # (1,T=1,1)
                     },
                     "language": {
@@ -398,6 +402,16 @@ def main():
                 action_dict = result[0] if isinstance(result, list) else result
                 arm_act  = np.array(action_dict["single_arm"], dtype=np.float32)[0]  # (H,3)
                 grip_act = np.array(action_dict["gripper"],    dtype=np.float32)[0]  # (H,1)
+
+                # Diagnostic: cos_sim < 0 means action points away from cube
+                to_cube = CUBE_POS - eef_pos
+                a0 = arm_act[0]
+                if np.linalg.norm(a0) > 1e-6 and np.linalg.norm(to_cube) > 1e-6:
+                    cos_sim = float(np.dot(to_cube, a0) /
+                                    (np.linalg.norm(to_cube) * np.linalg.norm(a0)))
+                    print(f"  [diag] eef={np.round(eef_pos,3)}  "
+                          f"act_xyz={np.round(a0,4)}  cos_sim={cos_sim:.3f}", flush=True)
+
 
                 # Build 7D action: [dx,dy,dz,0,0,0, gripper_binary]
                 rot_zeros = np.zeros_like(arm_act)                                    # (H,3)
